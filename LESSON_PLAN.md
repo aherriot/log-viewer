@@ -126,7 +126,7 @@ points** we'll discuss, what **you build**, and how we **check understanding**.
 Checkboxes track progress.
 
 ### Phase 0 — Toolchain & first Ruby program
-- [ ] Done
+- [x] Done
 - **Ruby/Rails concepts:** `gem`/`bundle`, rbenv version pinning, `irb`/`rails
   console`, running a `.rb` file, `puts`/`p`/`pp`. Install Rails; install Postgres
   via Homebrew and start the service.
@@ -347,3 +347,11 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   Bundler 4.0.15, Homebrew 6.0.5; Rails and Postgres not yet installed; no Docker.
   Next: Phase 0 — install Rails + Postgres, first Ruby script, and run the SQL
   baseline self-check to calibrate before the advanced-index phases.
+- **2026-07-13:** Phase 0 complete. Installed Postgres 18 via Homebrew and Rails
+  8.1.3 via `gem install rails` (rbenv). Hit a stale-shell PATH issue where
+  `/usr/bin/rails` shadowed the rbenv shim; resolved by re-checking `which -a
+  rails` in a fresh shell. `createdb`/`psql` confirmed working. Wrote and ran
+  `hello.rb` exercising `puts`/`p`/`nil`/symbols/hashes; predictions matched.
+  Explained `bundle exec` (Gemfile.lock enforcement ≈ `npm ci` vs global
+  installs). Next: Phase 1 — plain-Ruby `LogGenerator` (symbols, hashes, blocks,
+  Enumerable), no Rails yet.
