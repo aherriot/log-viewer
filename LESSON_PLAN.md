@@ -157,7 +157,7 @@ Checkboxes track progress.
   `Enumerable`; predict-the-output on a block/`yield` snippet.
 
 ### Phase 2 — Rails skeleton + the `logs` model & schema
-- [ ] Done
+- [x] Done
 - **Ruby/Rails concepts:** `rails new -d postgresql`, MVC & convention-over-
   configuration, `bin/rails generate`, **migrations**, **Active Record models**,
   `schema.rb`, `rails console`, `rails dbconsole`.
@@ -332,6 +332,8 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-13 | 2 | Rails app generated in place at repo root (`rails new . -d postgresql`) | Keeps Phase 1 artifacts and the Rails project in one repo; `.git` already present so Rails won't reinit it |
 | 2026-07-13 | 2 | `status` column as a native Postgres enum type | DB-enforced valid values; storage-efficient; accepted the extra migration ceremony for adding values later |
 | 2026-07-13 | 2 | Primary key: `bigint` (Rails default), not UUID | Single writer, no external exposure of IDs, no distributed-generation need; UUIDv7 (Postgres 18 has native `uuidv7()`) would be the right call only if ingestion becomes multi-writer or IDs go public |
+| 2026-07-14 | 2 | App-wide `ActiveRecord::ConnectionAdapters::PostgreSQLAdapter.datetime_type = :timestamptz` via initializer (loaded through `ActiveSupport.on_load(:active_record_postgresqladapter)`) | Every future `t.datetime` becomes `timestamptz` automatically; can't be forgotten on a later migration the way a per-column override could be |
+| 2026-07-14 | 2 | `logs` table: `level` (string), `status` (native `log_status` enum: ok/client_error/server_error), `http_status` (integer, raw HTTP code), `user_id` (bigint), `message` (text), `ip` (inet), `metadata` (jsonb), `created_at` only (no `updated_at` — logs are immutable) | Separates a small dashboard-friendly status category from the raw HTTP code; drops a dead `updated_at` column on an append-only table |
 
 ---
 
@@ -370,3 +372,17 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   instance vars (`@foo`) vs Ruby's rarely-used class vars (`@@foo`). Next: Phase 2
   — `rails new`, the `Log` model/migration, schema decisions (timestamptz, jsonb,
   status representation).
+- **2026-07-14:** Phase 2 complete. `rails new . -d postgresql` in place; decided
+  bigint PK, native Postgres enum for `status` (separate from raw `http_status`),
+  app-wide `timestamptz` via an `ActiveSupport.on_load(:active_record_postgresqladapter)`
+  initializer. Hit and fixed: initializer referencing `PostgreSQLAdapter` directly
+  before it's loaded (NameError — fixed with the load hook), a stray trailing
+  `)`, a `t.log_status` typo (real method is `t.enum ..., enum_type:`), a
+  `t.jsonb : metadata` space-breaks-symbol-literal bug, and a missing `user_id`
+  column. Verified via `\d logs` that `created_at` is genuinely `timestamp(6)
+  with time zone`. No indexes added yet (deliberate — Phase 3.5 needs an honest
+  Seq-Scan baseline). Confirmed in `rails console`: native enum round-trips as a
+  plain string (no Rails `enum` macro needed), `inet` round-trips as `IPAddr`,
+  `jsonb` round-trips as a real Hash, and single `.create!` implicitly wraps in a
+  transaction. Next: Phase 3 — ingestion at scale (rake task wrapping
+  `LogGenerator`, `insert_all`/`COPY` vs row-by-row `create`, seed ~1M rows).
