@@ -329,6 +329,9 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-13 | — | Learn plain Ruby (Phase 1) before touching Rails | Separate "the language" from "the framework magic"; the generator becomes reusable |
 | 2026-07-13 | 1 | Log event modeled as a plain Hash (symbol keys) | Simplest, most JS-object-literal-like; no behavior needed yet |
 | 2026-07-13 | 1 | Faker gem for random field values | Realistic data (names/IPs/sentences) with minimal code; revisit hand-rolled randomness later if desired |
+| 2026-07-13 | 2 | Rails app generated in place at repo root (`rails new . -d postgresql`) | Keeps Phase 1 artifacts and the Rails project in one repo; `.git` already present so Rails won't reinit it |
+| 2026-07-13 | 2 | `status` column as a native Postgres enum type | DB-enforced valid values; storage-efficient; accepted the extra migration ceremony for adding values later |
+| 2026-07-13 | 2 | Primary key: `bigint` (Rails default), not UUID | Single writer, no external exposure of IDs, no distributed-generation need; UUIDv7 (Postgres 18 has native `uuidv7()`) would be the right call only if ingestion becomes multi-writer or IDs go public |
 
 ---
 
