@@ -174,7 +174,7 @@ Checkboxes track progress.
   in a migration that uses `timestamp` and a `string` where a type is wrong.
 
 ### Phase 3 — Ingestion at scale (make writes hurt, then fix them)
-- [ ] Done
+- [x] Done
 - **Ruby/Rails concepts:** rake tasks (`lib/tasks`), the Rails runner, wrapping
   the Phase-1 generator, `create` vs `insert_all` vs raw `COPY`, transactions,
   batching, `find_each`.
@@ -334,6 +334,8 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-13 | 2 | Primary key: `bigint` (Rails default), not UUID | Single writer, no external exposure of IDs, no distributed-generation need; UUIDv7 (Postgres 18 has native `uuidv7()`) would be the right call only if ingestion becomes multi-writer or IDs go public |
 | 2026-07-14 | 2 | App-wide `ActiveRecord::ConnectionAdapters::PostgreSQLAdapter.datetime_type = :timestamptz` via initializer (loaded through `ActiveSupport.on_load(:active_record_postgresqladapter)`) | Every future `t.datetime` becomes `timestamptz` automatically; can't be forgotten on a later migration the way a per-column override could be |
 | 2026-07-14 | 2 | `logs` table: `level` (string), `status` (native `log_status` enum: ok/client_error/server_error), `http_status` (integer, raw HTTP code), `user_id` (bigint), `message` (text), `ip` (inet), `metadata` (jsonb), `created_at` only (no `updated_at` — logs are immutable) | Separates a small dashboard-friendly status category from the raw HTTP code; drops a dead `updated_at` column on an append-only table |
+| 2026-07-14 | 3 | Two seed rake tasks: `logs:seed[count]` (`Log.create!`, one row at a time) and `logs:seed_bulk[count]` (`Log.insert_all`, batched at 1,000, `record_timestamps: false`) | Needed a slow baseline and a fast path to feel the difference firsthand |
+| 2026-07-14 | 3 | Skipped the raw `COPY` comparison | `insert_all` already demonstrated the core lesson (batching beats row-by-row); `COPY` deemed not worth the extra plumbing right now |
 
 ---
 
@@ -386,3 +388,20 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   `jsonb` round-trips as a real Hash, and single `.create!` implicitly wraps in a
   transaction. Next: Phase 3 — ingestion at scale (rake task wrapping
   `LogGenerator`, `insert_all`/`COPY` vs row-by-row `create`, seed ~1M rows).
+- **2026-07-14:** Phase 3 complete. Built `logs:seed[count]` (`create!`, one row
+  at a time) and `logs:seed_bulk[count]` (`insert_all`, batched at 1,000).
+  Debugged along the way: `Range#sample`-style class/instance method mixups
+  (`LogGenerator.generate_many` vs `LogGenerator.new.generate_many`), Hash
+  dot-access typos (`log.status` vs `log[:status]`), a stray trailing `.` after
+  a string causing a cascading `SyntaxError`, a missing `faker` entry in the
+  Rails app's own `Gemfile` (global `gem install` doesn't satisfy `bundle`),
+  and a `status_map` mapping raw HTTP codes to the `log_status` enum strings.
+  Measured at 10,000 rows: `create!` took ~29.3s, `insert_all` batched took
+  ~2.9s (~10x faster) — matches the theory (round-trips, per-row validation/
+  callback overhead, individual commits vs batched multi-row `INSERT`).
+  Refactored `seed_bulk` to generate-and-insert per batch instead of building
+  the full array up front, after a large seed appeared to "hang" — it was
+  actually still in the Faker-generation phase for all million hashes before
+  any insert ran. Skipped `COPY` (see decisions log). Seeded the table past
+  1M rows. Next: Phase 3.5 — `EXPLAIN ANALYZE` baseline (Seq Scan vs Index
+  Scan, no indexes yet, capture "before" timings for common `WHERE` queries).
