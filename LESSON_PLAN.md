@@ -140,7 +140,7 @@ Checkboxes track progress.
   what `bundle exec` protects you from.
 
 ### Phase 1 — Ruby the language (plain Ruby, zero Rails)
-- [ ] Done
+- [x] Done
 - **Ruby/Rails concepts:** everything-is-an-object, **symbols vs strings**, hashes
   (incl. keyword args), **blocks / `yield` / `Proc` / lambda**, `Enumerable`
   (`map`/`select`/`reduce`/`each_with_object`), truthiness (only `nil`/`false` are
@@ -327,6 +327,8 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-13 | — | Postgres native via Homebrew (not Docker) | Docker not installed on this box; native is simpler for a learning setup |
 | 2026-07-13 | — | Minitest over RSpec to start | Learn Rails' default tooling first; RSpec is a Phase 10 side-quest |
 | 2026-07-13 | — | Learn plain Ruby (Phase 1) before touching Rails | Separate "the language" from "the framework magic"; the generator becomes reusable |
+| 2026-07-13 | 1 | Log event modeled as a plain Hash (symbol keys) | Simplest, most JS-object-literal-like; no behavior needed yet |
+| 2026-07-13 | 1 | Faker gem for random field values | Realistic data (names/IPs/sentences) with minimal code; revisit hand-rolled randomness later if desired |
 
 ---
 
@@ -355,3 +357,13 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   Explained `bundle exec` (Gemfile.lock enforcement ≈ `npm ci` vs global
   installs). Next: Phase 1 — plain-Ruby `LogGenerator` (symbols, hashes, blocks,
   Enumerable), no Rails yet.
+- **2026-07-13:** Phase 1 complete. Built `LogGenerator` (plain Hash events,
+  Faker for random data). Bugs hit along the way, each a real teaching moment:
+  (1) `Range#sample` doesn't exist — `.sample` is Array/Hash-only, not
+  Enumerable; fixed with `rand(@user_pool)`. (2) `return` inside a block passed
+  to `Array.new` performs a non-local return, exiting `generate_many` entirely
+  after the first call — fixed by relying on the block's implicit last-expression
+  return instead of an explicit `return`. Covered `%w[]` literals, `.sample`,
+  instance vars (`@foo`) vs Ruby's rarely-used class vars (`@@foo`). Next: Phase 2
+  — `rails new`, the `Log` model/migration, schema decisions (timestamptz, jsonb,
+  status representation).
