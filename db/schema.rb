@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_15_143921) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_15_144952) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -32,5 +32,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_15_143921) do
     t.index ["metadata"], name: "index_logs_on_metadata", using: :gin
     t.index ["search_vector"], name: "index_logs_on_search_vector", using: :gin
     t.index ["status"], name: "index_logs_on_status_server_error", where: "(status = 'server_error'::log_status)"
+    t.index ["user_id", "status"], name: "index_logs_on_user_id_status_covering", include: ["created_at"]
   end
 end

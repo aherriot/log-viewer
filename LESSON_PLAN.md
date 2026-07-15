@@ -274,7 +274,7 @@ Checkboxes track progress.
   index's `WHERE`; explain-it-back on why partial indexes shrink write cost.
 
 ### Phase 8 — Covering indexes / `INCLUDE` (strategy 5)
-- [ ] Done
+- [x] Done
 - **Postgres focus:** **Index Only Scan**, covering indexes with `INCLUDE`,
   avoiding the **Heap Fetch**, and the crucial nuance: index-only scans still
   consult the **visibility map**, so `VACUUM` freshness matters (a table full of
@@ -345,6 +345,8 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-15 | 6 | Built a minimal HTML log viewer (`LogsController#index`, plain table, no JS framework) alongside the JSON API, plus time-range and `ip` filters reusing the Phase 4 BRIN and Phase 5 GIN indexes | User's stated goal is an eventual searchable/sortable/filterable log viewer; surfacing already-built indexes in the UI now, beyond what Phase 6 strictly required, avoids leaving proven-but-unused index work stranded |
 | 2026-07-15 | 7 | Partial index only on `status = 'server_error'` (not `client_error` or a full index on `status`) | `server_error` is the "error dashboard" use case the plan calls out; a single-value partial index is the minimal case that still demonstrates the predicate-implication rule and write-cost savings |
 | 2026-07-15 | 7 | Added an "Errors only" checkbox to the UI, backed by a `server_errors_only` scope matching the partial index's predicate exactly | Any other status value routed through the same param would silently fall back to a Seq Scan — worth exercising the one query shape the index actually serves, rather than adding a generic status dropdown that would mostly miss it |
+| 2026-07-15 | 8 | Composite covering index `(user_id, status)` with `created_at` as an `INCLUDE` column, rather than keying on all three | `user_id`/`status` are what the target query filters on (need B-tree ordering); `created_at` is only read back, not filtered/sorted on, so it rides along cheaper as an included column |
+| 2026-07-15 | 8 | Skipped adding a `user_id` filter to the UI for now | Plan is to eventually build a generic filter-on-any-column UI rather than one-off fields per phase; this index is proven via `EXPLAIN` and will get exercised once that generic UI exists |
 
 ---
 
@@ -516,5 +518,25 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   maintenance entirely — a full index on `status` would pay that cost on
   every write regardless of value. Added an "Errors only" checkbox to the UI
   backed by a `server_errors_only` scope matching the partial index's
-  predicate exactly (see decisions log). Next: Phase 8 — Covering indexes /
-  `INCLUDE`.
+  predicate exactly (see decisions log).
+- **2026-07-15:** Phase 8 complete. Baselined `select user_id, status,
+  created_at from logs where user_id = 42` with no index: parallel Seq Scan,
+  61.7ms, ~47,456 buffers. Added a composite covering index `(user_id,
+  status) INCLUDE (created_at)` (see decisions log for key-vs-include
+  reasoning). First re-run surprised: plan was `Bitmap Heap Scan`, not
+  `Index Only Scan`, despite the index covering every selected column —
+  execution still dropped to 1.4ms / ~1,005 buffers (already a huge win from
+  selectivity alone), but `Heap Fetches` wasn't even in the plan yet because
+  it hadn't achieved index-only. Root cause: the visibility map wasn't
+  current for the relevant pages (no recent `VACUUM`), so Postgres couldn't
+  trust it enough to skip the heap. Ran `VACUUM ANALYZE logs`, re-ran the
+  identical query, predicted (correctly) `Index Only Scan` with
+  `Heap Fetches: 0` — got 0.32ms / 14 buffers, ~193x faster and ~3,390x fewer
+  buffers than the original baseline. Core lesson: a covering index is
+  necessary but not sufficient for an index-only scan — the visibility map
+  has to be current too, which is why a freshly bulk-loaded table (like this
+  one right after seeding) can show heap fetches even when every needed
+  column is in the index, until autovacuum (or a manual `VACUUM`) catches
+  up. Deliberately didn't add a `user_id` filter to the UI yet (see decisions
+  log) — deferred to a future generic filter-by-any-column UI pass. Next:
+  Phase 9 — Index maintenance & production ops.
