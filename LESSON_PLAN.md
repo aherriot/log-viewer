@@ -257,7 +257,7 @@ Checkboxes track progress.
   back on stemming (why "running" matches "run").
 
 ### Phase 7 — Partial indexes (strategy 4)
-- [ ] Done
+- [x] Done
 - **Postgres focus:** **partial index** (`CREATE INDEX ... WHERE status =
   'error'`) — index only the rows a hot query cares about, keeping it tiny and the
   writes cheap for everything else. The planner-must-prove-the-predicate rule (the
@@ -343,6 +343,8 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-15 | 5 | Tested containment on `ip` (high cardinality) rather than `browser` (only 7 distinct values in this dataset) | `browser`'s low cardinality (~14% selectivity per value) wouldn't show GIN's real strength the way a highly selective key would — deliberate choice of query, not a data defect like the Phase 4 BRIN correlation bug |
 | 2026-07-15 | 6 | `search_vector` generated column uses `to_tsvector('english', ...)` despite `message` being Lorem Ipsum, not real English | Kept for simplicity; documented the limitation (stop-word removal is a no-op on non-English tokens, though rule-based stemming still fires mechanically) rather than switching to `'simple'` |
 | 2026-07-15 | 6 | Built a minimal HTML log viewer (`LogsController#index`, plain table, no JS framework) alongside the JSON API, plus time-range and `ip` filters reusing the Phase 4 BRIN and Phase 5 GIN indexes | User's stated goal is an eventual searchable/sortable/filterable log viewer; surfacing already-built indexes in the UI now, beyond what Phase 6 strictly required, avoids leaving proven-but-unused index work stranded |
+| 2026-07-15 | 7 | Partial index only on `status = 'server_error'` (not `client_error` or a full index on `status`) | `server_error` is the "error dashboard" use case the plan calls out; a single-value partial index is the minimal case that still demonstrates the predicate-implication rule and write-cost savings |
+| 2026-07-15 | 7 | Added an "Errors only" checkbox to the UI, backed by a `server_errors_only` scope matching the partial index's predicate exactly | Any other status value routed through the same param would silently fall back to a Seq Scan — worth exercising the one query shape the index actually serves, rather than adding a generic status dropdown that would mostly miss it |
 
 ---
 
@@ -497,5 +499,22 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   `websearch_to_tsquery` + `ts_rank`, verified via curl. Then built a minimal
   HTML log-viewer page (plain table, no JS framework) and added `in_time_range`
   and `with_ip` scopes to the same action, exercising the Phase 4 BRIN and
-  Phase 5 GIN indexes from the UI (see decisions log). Next: Phase 7 —
-  Partial indexes.
+  Phase 5 GIN indexes from the UI (see decisions log).
+- **2026-07-15:** Phase 7 complete. Baselined `status = 'server_error'` with
+  no index: Seq Scan, ~14% selective (142,910 rows), 244ms, ~47,456 buffers.
+  Added a partial index (`add_index :logs, :status, where: "status =
+  'server_error'"`). Confirmed the predicate-implication rule directly: a
+  differently-valued query (`status = 'client_error'`) fell back to an
+  identical Seq Scan, since it doesn't imply the index's `WHERE`; the
+  matching query (`status = 'server_error'`) got a `Bitmap Heap Scan` via the
+  partial index, 101.6ms (~2.4x faster) — modest, not dramatic, because
+  `Heap Blocks: exact=45666` still means fetching most of the table at this
+  selectivity, same lesson as the Phase 4 B-tree case. The real win
+  distinguished here: the index itself only touched 122 buffers to search
+  (it only contains entries for the ~14% of rows matching the predicate),
+  and every `INSERT`/`UPDATE` on a non-`server_error` row skips this index's
+  maintenance entirely — a full index on `status` would pay that cost on
+  every write regardless of value. Added an "Errors only" checkbox to the UI
+  backed by a `server_errors_only` scope matching the partial index's
+  predicate exactly (see decisions log). Next: Phase 8 — Covering indexes /
+  `INCLUDE`.

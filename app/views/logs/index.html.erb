@@ -4,6 +4,7 @@
   body { font-family: -apple-system, sans-serif; margin: 2rem; color: #222; }
   form { margin-bottom: 1.5rem; display: flex; gap: 0.75rem; align-items: end; flex-wrap: wrap; }
   form label { display: flex; flex-direction: column; font-size: 0.8rem; color: #555; gap: 0.25rem; }
+  form label.checkbox { flex-direction: row; align-items: center; gap: 0.4rem; }
   input[type="text"], input[type="datetime-local"] { font-size: 1rem; padding: 0.4rem; }
   input[type="text"].q { width: 20rem; }
   input[type="text"].ip { width: 10rem; }
@@ -34,6 +35,10 @@
   <label>
     IP
     <%= text_field_tag :ip, @ip, placeholder: "1.2.3.4", class: "ip" %>
+  </label>
+  <label class="checkbox">
+    <%= check_box_tag :errors_only, "1", ActiveModel::Type::Boolean.new.cast(@errors_only) %>
+    Errors only
   </label>
   <%= button_tag "Filter" %>
 <% end %>

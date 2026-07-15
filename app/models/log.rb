@@ -33,4 +33,13 @@ class Log < ApplicationRecord
 
     where("metadata @> ?", { ip: ip }.to_json)
   }
+
+  # Matches index_logs_on_status_server_error's predicate exactly, so the
+  # planner can actually use that partial index. Any other status value
+  # filtered through here would fall back to a Seq Scan.
+  scope :server_errors_only, ->(flag) {
+    return all unless ActiveModel::Type::Boolean.new.cast(flag)
+
+    where(status: "server_error")
+  }
 end

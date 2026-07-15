@@ -4,10 +4,12 @@ class LogsController < ApplicationController
     @from = params[:from]
     @to = params[:to]
     @ip = params[:ip]
+    @errors_only = params[:errors_only]
 
     @logs = Log.search(@query)
                .in_time_range(@from, @to)
                .with_ip(@ip)
+               .server_errors_only(@errors_only)
                .limit(50)
 
     respond_to do |format|
