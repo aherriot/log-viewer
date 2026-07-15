@@ -1,6 +1,6 @@
 class Log < ApplicationRecord
   SORTABLE_COLUMNS = %w[created_at user_id http_status level status].freeze
-  HTTP_STATUSES = [200, 301, 404, 500].freeze
+  HTTP_STATUSES = [ 200, 301, 404, 500 ].freeze
 
   # Full-text search over `message` via the generated `search_vector` column.
   # `websearch_to_tsquery` accepts loose, user-typed search syntax (quoted
@@ -9,7 +9,7 @@ class Log < ApplicationRecord
   def self.search(query)
     return all if query.blank?
 
-    tsquery_sql = sanitize_sql_array(["websearch_to_tsquery('english', ?)", query])
+    tsquery_sql = sanitize_sql_array([ "websearch_to_tsquery('english', ?)", query ])
 
     select("logs.*, ts_rank(search_vector, #{tsquery_sql}) AS rank")
       .where("search_vector @@ #{tsquery_sql}")

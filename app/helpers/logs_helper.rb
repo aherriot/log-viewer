@@ -4,7 +4,7 @@ module LogsHelper
     link = link_to text, logs_path(request.query_parameters.merge(sort: column, dir: next_dir, page: nil))
     return link unless current_sort == column
 
-    safe_join([link, " ", current_dir == "desc" ? "▼" : "▲"])
+    safe_join([ link, " ", current_dir == "desc" ? "▼" : "▲" ])
   end
 
   # Wraps a filter input with a small "×" button that clears just that field
@@ -13,7 +13,7 @@ module LogsHelper
   # is blank, so its appearance/disappearance never changes column width.
   def field_with_clear(field_name, value, &block)
     content_tag(:div, class: "field-row") do
-      classes = ["clear-btn"]
+      classes = [ "clear-btn" ]
       classes << "invisible" unless value.present?
 
       safe_join([

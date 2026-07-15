@@ -12,7 +12,7 @@ class LogsController < ApplicationController
     @http_status = params[:http_status]
     @sort = params[:sort]
     @dir = params[:dir]
-    @page = [params[:page].to_i, 1].max
+    @page = [ params[:page].to_i, 1 ].max
 
     @errors = validate_filters
 
@@ -31,8 +31,8 @@ class LogsController < ApplicationController
         else
           render json: {
             logs: @logs.as_json(
-              only: [:id, :created_at, :level, :status, :http_status, :user_id, :message, :ip],
-              methods: (@query.present? ? [:rank] : [])
+              only: [ :id, :created_at, :level, :status, :http_status, :user_id, :message, :ip ],
+              methods: (@query.present? ? [ :rank ] : [])
             ),
             page: @page,
             has_next: @has_next
@@ -41,7 +41,7 @@ class LogsController < ApplicationController
       end
     end
   rescue ActiveRecord::StatementInvalid => e
-    @errors = ["Something went wrong running that query (#{e.cause&.class&.name || e.class.name})."]
+    @errors = [ "Something went wrong running that query (#{e.cause&.class&.name || e.class.name})." ]
     @logs = []
     @has_next = false
     respond_to do |format|

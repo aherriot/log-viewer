@@ -7,7 +7,7 @@ class LogGenerator
   LEVELS = %w[debug info warn error].freeze
 
   # Weighted so most requests succeed — repeat values to bias .sample
-  STATUSES = [200, 200, 200, 200, 301, 404, 500].freeze
+  STATUSES = [ 200, 200, 200, 200, 301, 404, 500 ].freeze
 
   def initialize(user_pool: 1..1000, start_time: Time.now - 7 * 24 * 60 * 60)
     @user_pool = user_pool
@@ -17,7 +17,7 @@ class LogGenerator
   def generate
     level = LEVELS.sample
     status = STATUSES.sample
-    return {
+    {
       timestamp: @clock,
       level: level,
       status: status,
