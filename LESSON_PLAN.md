@@ -190,7 +190,7 @@ Checkboxes track progress.
   much; explain-it-back on why a transaction around a batch matters.
 
 ### Phase 3.5 — EXPLAIN ANALYZE & the SQL baseline, hands-on
-- [ ] Done
+- [x] Done
 - **Postgres focus:** reading a query plan — Seq Scan vs Index Scan vs Index Only
   Scan, **cost vs actual time**, `rows` estimate vs actual (planner
   mis-estimates), `BUFFERS`, what "Heap Fetch" means. `.explain` in Rails and raw
@@ -336,6 +336,7 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-14 | 2 | `logs` table: `level` (string), `status` (native `log_status` enum: ok/client_error/server_error), `http_status` (integer, raw HTTP code), `user_id` (bigint), `message` (text), `ip` (inet), `metadata` (jsonb), `created_at` only (no `updated_at` — logs are immutable) | Separates a small dashboard-friendly status category from the raw HTTP code; drops a dead `updated_at` column on an append-only table |
 | 2026-07-14 | 3 | Two seed rake tasks: `logs:seed[count]` (`Log.create!`, one row at a time) and `logs:seed_bulk[count]` (`Log.insert_all`, batched at 1,000, `record_timestamps: false`) | Needed a slow baseline and a fast path to feel the difference firsthand |
 | 2026-07-14 | 3 | Skipped the raw `COPY` comparison | `insert_all` already demonstrated the core lesson (batching beats row-by-row); `COPY` deemed not worth the extra plumbing right now |
+| 2026-07-14 | 3.5 | Baseline captured with zero indexes on ~1M rows before any index work begins | Need an honest "before" photo — every later phase's index wins get measured against these numbers, not against each other |
 
 ---
 
@@ -405,3 +406,26 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   any insert ran. Skipped `COPY` (see decisions log). Seeded the table past
   1M rows. Next: Phase 3.5 — `EXPLAIN ANALYZE` baseline (Seq Scan vs Index
   Scan, no indexes yet, capture "before" timings for common `WHERE` queries).
+- **2026-07-14:** Phase 3.5 complete. Captured `EXPLAIN (ANALYZE, BUFFERS)`
+  baselines on ~1M rows, zero indexes, in `dbconsole`:
+  - `status = 'client_error'` (~14% selective): Seq Scan, 117ms, buffers
+    ~35,850 (hit+read), estimate/actual rows matched closely.
+  - `user_id = 1` (~0.1% selective): planner chose a parallel plan (`Gather`
+    over `Parallel Seq Scan`, 2 workers), 56ms — about half of the
+    non-parallel queries despite scanning the same table, since parallelism
+    kicked in because the *output* row count was small (cheap to funnel
+    back through `Gather`), not because the predicate itself was cheap.
+  - `created_at > '2026-07-13'` (~23% selective, sargable range): Seq Scan,
+    146ms.
+  - `created_at::date = '2026-07-13'` (non-sargable, same logical rows as
+    above): went parallel but still slower (194ms) than the sargable
+    version, and the planner's row estimate was wildly off (5,000 estimated
+    vs 143,102 actual) because wrapping the column in `::date` hides it from
+    the column's statistics. Lesson: sargable = usable by an index/stats
+    without transforming the column first; this predicate will stay unable
+    to use a plain `created_at` index even after one exists later, unless
+    rewritten as a range or backed by an expression index.
+  All three real predicates scanned the same ~35,850 buffers total,
+  confirming every one read the whole table — the expected state with no
+  indexes. These numbers are the "before" baseline every later indexing
+  phase gets compared against. Next: Phase 4 (first indexes) — see roadmap.
