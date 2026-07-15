@@ -8,16 +8,19 @@ module LogsHelper
   end
 
   # Wraps a filter input with a small "×" button that clears just that field
-  # (via the auto-submit Stimulus controller) and resubmits. Only rendered
-  # when the field currently has a value.
+  # (via the auto-submit Stimulus controller) and resubmits. The button is
+  # always rendered (reserving its space) but hidden via CSS when the field
+  # is blank, so its appearance/disappearance never changes column width.
   def field_with_clear(field_name, value, &block)
     content_tag(:div, class: "field-row") do
-      parts = [capture(&block)]
-      if value.present?
-        parts << button_tag("×", type: "button", class: "clear-btn", title: "Clear #{field_name}",
+      classes = ["clear-btn"]
+      classes << "invisible" unless value.present?
+
+      safe_join([
+        capture(&block),
+        button_tag("×", type: "button", class: classes.join(" "), title: "Clear #{field_name}",
           data: { action: "click->auto-submit#clearField", auto_submit_field_param: field_name })
-      end
-      safe_join(parts)
+      ])
     end
   end
 end
