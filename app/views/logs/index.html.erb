@@ -35,9 +35,24 @@
   }
   .loading-text { font-weight: bold; font-size: 1rem; color: #333; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .field-row { display: flex; align-items: center; gap: 0.3rem; }
+  .field-row > *:first-child { flex: 1; min-width: 0; }
+  .clear-btn {
+    flex: none; width: 1.3rem; height: 1.3rem; line-height: 1; padding: 0;
+    border: 1px solid #ccc; border-radius: 50%; background: #fff; color: #888;
+    cursor: pointer; font-size: 0.85rem;
+  }
+  .clear-btn:hover { background: #eee; color: #b00020; }
+  .header-bar { display: flex; align-items: center; gap: 1rem; }
+  .clear-all { font-size: 0.9rem; }
 </style>
 
-<h1>Log Viewer</h1>
+<div class="header-bar">
+  <h1>Log Viewer</h1>
+  <% if [@query, @from, @to, @ip, @status, @level, @user_id, @http_status].any?(&:present?) %>
+    <%= link_to "Clear all filters", logs_path, class: "clear-all" %>
+  <% end %>
+</div>
 
 <% if @errors.present? %>
   <div class="banner error">
@@ -62,44 +77,44 @@
         <th>
           <div class="col-header">
             <%= sort_link("Time", "created_at", @sort, @dir) %>
-            <%= date_field_tag :from, @from, data: { action: "change->auto-submit#submit" } %>
-            <%= date_field_tag :to, @to, data: { action: "change->auto-submit#submit" } %>
+            <%= field_with_clear("from", @from) { date_field_tag :from, @from, data: { action: "change->auto-submit#submit" } } %>
+            <%= field_with_clear("to", @to) { date_field_tag :to, @to, data: { action: "change->auto-submit#submit" } } %>
           </div>
         </th>
         <th>
           <div class="col-header">
             <%= sort_link("Level", "level", @sort, @dir) %>
-            <%= select_tag :level, options_for_select([["All", ""]] + %w[debug info warn error], @level), data: { action: "change->auto-submit#submit" } %>
+            <%= field_with_clear("level", @level) { select_tag :level, options_for_select([["All", ""]] + %w[debug info warn error], @level), data: { action: "change->auto-submit#submit" } } %>
           </div>
         </th>
         <th>
           <div class="col-header">
             <%= sort_link("Status", "status", @sort, @dir) %>
-            <%= select_tag :status, options_for_select([["All", ""], ["ok", "ok"], ["client error", "client_error"], ["server error", "server_error"]], @status), data: { action: "change->auto-submit#submit" } %>
+            <%= field_with_clear("status", @status) { select_tag :status, options_for_select([["All", ""], ["ok", "ok"], ["client error", "client_error"], ["server error", "server_error"]], @status), data: { action: "change->auto-submit#submit" } } %>
           </div>
         </th>
         <th>
           <div class="col-header">
             <%= sort_link("HTTP", "http_status", @sort, @dir) %>
-            <%= select_tag :http_status, options_for_select([["All", ""]] + Log::HTTP_STATUSES.map(&:to_s), @http_status), class: "narrow", data: { action: "change->auto-submit#submit" } %>
+            <%= field_with_clear("http_status", @http_status) { select_tag :http_status, options_for_select([["All", ""]] + Log::HTTP_STATUSES.map(&:to_s), @http_status), class: "narrow", data: { action: "change->auto-submit#submit" } } %>
           </div>
         </th>
         <th>
           <div class="col-header">
             <%= sort_link("User", "user_id", @sort, @dir) %>
-            <%= number_field_tag :user_id, @user_id, class: "narrow", data: { action: "blur->auto-submit#submit keydown.enter->auto-submit#submit" } %>
+            <%= field_with_clear("user_id", @user_id) { number_field_tag :user_id, @user_id, class: "narrow", data: { action: "blur->auto-submit#submit keydown.enter->auto-submit#submit" } } %>
           </div>
         </th>
         <th>
           <div class="col-header">
             IP
-            <%= text_field_tag :ip, @ip, placeholder: "1.2.3.4 or 10.0.0.0/24", class: "narrow", data: { action: "blur->auto-submit#submit keydown.enter->auto-submit#submit" } %>
+            <%= field_with_clear("ip", @ip) { text_field_tag :ip, @ip, placeholder: "1.2.3.4 or 10.0.0.0/24", class: "narrow", data: { action: "blur->auto-submit#submit keydown.enter->auto-submit#submit" } } %>
           </div>
         </th>
         <th>
           <div class="col-header">
             Message
-            <%= text_field_tag :q, @query, placeholder: "Search…", data: { action: "input->auto-submit#submitDebounced" } %>
+            <%= field_with_clear("q", @query) { text_field_tag :q, @query, placeholder: "Search…", data: { action: "input->auto-submit#submitDebounced" } } %>
           </div>
         </th>
         <% if @query.present? %><th>Rank</th><% end %>

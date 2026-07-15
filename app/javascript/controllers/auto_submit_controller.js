@@ -29,4 +29,16 @@ export default class extends Controller {
     clearTimeout(this.timeout)
     this.timeout = setTimeout(() => this.element.requestSubmit(), this.delayValue)
   }
+
+  // Clears one named field (via a "×" button's data-auto-submit-field-param)
+  // and resubmits immediately, without touching any other filter.
+  clearField(event) {
+    const field = event.params.field
+    const input = this.element.querySelector(`[name="${field}"]`)
+    if (!input) return
+
+    input.value = ""
+    clearTimeout(this.timeout)
+    this.element.requestSubmit()
+  }
 }
