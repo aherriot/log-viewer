@@ -223,7 +223,7 @@ Checkboxes track progress.
   back on *why* BRIN can be tiny yet fast for this shape of data.
 
 ### Phase 5 — JSONB & GIN indexes (strategy 2)
-- [ ] Done
+- [x] Done
 - **Postgres focus:** querying `jsonb` (`->`, `->>`, `@>` containment,
   `jsonb_path_query`); **GIN** index with default `jsonb_ops` vs `jsonb_path_ops`
   (smaller, containment-only); expression B-tree index on a single hot key
@@ -339,6 +339,8 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-14 | 3.5 | Baseline captured with zero indexes on ~1M rows before any index work begins | Need an honest "before" photo — every later phase's index wins get measured against these numbers, not against each other |
 | 2026-07-15 | 4 | `LogGenerator` reworked to advance an internal `@clock` per row (jittered step sized by `span`/`count`) instead of an independent random offset per row | Original random-per-row `timestamp` gave `created_at` ~0 correlation with physical insertion order, which silently defeats BRIN; a real log stream's timestamps naturally correlate with insert order |
 | 2026-07-15 | 4 | Kept BRIN as the `created_at` index (dropped the B-tree, added only for comparison) | On the reseeded, correlated dataset, BRIN cut buffer reads from ~35,850 (full table) to ~5,268 for a ~13% selective range query and ran faster (38.8ms) than every prior plan; B-tree was only tested against the old, uncorrelated dataset so wasn't re-compared head-to-head on the same data |
+| 2026-07-15 | 5 | GIN index on `metadata` with default `jsonb_ops`; skipped a `jsonb_path_ops` / expression-index size-and-plan comparison | Default `jsonb_ops` supports all the operators (`@>`, `?`, `?&`, `?|`) we might want later, not just containment; deferred the narrower comparison for time, same call as skipping `COPY` in Phase 3 |
+| 2026-07-15 | 5 | Tested containment on `ip` (high cardinality) rather than `browser` (only 7 distinct values in this dataset) | `browser`'s low cardinality (~14% selectivity per value) wouldn't show GIN's real strength the way a highly selective key would — deliberate choice of query, not a data defect like the Phase 4 BRIN correlation bug |
 
 ---
 
@@ -456,4 +458,19 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   the numbers show "BRIN works when correlation holds," not "BRIN beats
   B-tree" directly. The B-tree index was properly removed via `remove_index`
   inside the BRIN-adding migration itself (not raw SQL), so no
-  schema_migrations/reality drift. Next: Phase 5 — see roadmap.
+  schema_migrations/reality drift.
+- **2026-07-15:** Phase 5 complete. Baselined a `metadata @> '{"browser": ...}'`
+  containment query with no index: Seq Scan, 218ms, ~35,858 buffers — plus
+  noticed the planner's row estimate (90,909) missed the actual (142,800) by
+  ~57%, a bigger miss than any scalar-column query so far (jsonb stats are
+  coarser than plain column stats). Discovered `browser` only has 7 distinct
+  values in this dataset (`Faker::Internet.user_agent` draws from a small
+  fixed pool), making single-value containment on it only ~14% selective —
+  deliberately switched to testing `ip` (per-row unique) instead, for a
+  cleaner demonstration. Added a GIN index (default `jsonb_ops`) on
+  `metadata`. Re-ran the `ip` containment query: 0.23ms vs a 102.7ms
+  no-index baseline (~450x), buffers dropped from ~35,858 to ~10,
+  `Heap Blocks: exact=1`. Covered GIN's general use cases beyond jsonb
+  (full-text `tsvector`, array containment/overlap, `pg_trgm` fuzzy text).
+  Deferred the `jsonb_path_ops` / expression-index comparison (see decisions
+  log). Next: Phase 6 — Full-Text Search (`tsvector` + GIN on `message`).
