@@ -70,13 +70,13 @@
         <th>
           <div class="col-header">
             <%= sort_link("User", "user_id", @sort, @dir) %>
-            <%= number_field_tag :user_id, @user_id, class: "narrow", data: { action: "input->auto-submit#submitDebounced" } %>
+            <%= number_field_tag :user_id, @user_id, class: "narrow", data: { action: "blur->auto-submit#submit keydown.enter->auto-submit#submit" } %>
           </div>
         </th>
         <th>
           <div class="col-header">
             IP
-            <%= text_field_tag :ip, @ip, placeholder: "1.2.3.4 or 10.0.0.0/24", class: "narrow", data: { action: "input->auto-submit#submitDebounced" } %>
+            <%= text_field_tag :ip, @ip, placeholder: "1.2.3.4 or 10.0.0.0/24", class: "narrow", data: { action: "blur->auto-submit#submit keydown.enter->auto-submit#submit" } %>
           </div>
         </th>
         <th>
