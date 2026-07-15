@@ -9,15 +9,16 @@ class LogGenerator
   # Weighted so most requests succeed — repeat values to bias .sample
   STATUSES = [200, 200, 200, 200, 301, 404, 500].freeze
 
-  def initialize(user_pool: 1..1000)
+  def initialize(user_pool: 1..1000, start_time: Time.now - 7 * 24 * 60 * 60)
     @user_pool = user_pool
+    @clock = start_time
   end
 
   def generate
     level = LEVELS.sample
     status = STATUSES.sample
     return {
-      timestamp: Time.now - rand(0..7 * 24 * 60 * 60),
+      timestamp: @clock,
       level: level,
       status: status,
       user_id: rand(@user_pool),
@@ -30,8 +31,19 @@ class LogGenerator
     }
   end
 
-  def generate_many(count)
-    Array.new(count) { generate }
+  # Advances an internal clock forward by a small, jittered step per row,
+  # instead of picking each timestamp independently at random. This keeps
+  # generation order and created_at order correlated (as in a real log
+  # stream), which BRIN indexes rely on. `span` controls how much wall-clock
+  # time the whole batch covers, defaulting to one hour.
+  def generate_many(count, span: 60 * 60)
+    average_step = count.positive? ? span.to_f / count : 0
+
+    Array.new(count) do
+      event = generate
+      @clock += rand(0.0..(average_step * 2))
+      event
+    end
   end
 end
 

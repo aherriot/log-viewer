@@ -206,7 +206,7 @@ Checkboxes track progress.
   spot-the-seq-scan on a non-sargable `WHERE`.
 
 ### Phase 4 — Time-series & BRIN indexes (strategy 1)
-- [ ] Done
+- [x] Done
 - **Postgres focus:** **BRIN** (Block Range Index) vs a B-tree on `created_at`.
   Why BRIN is orders of magnitude smaller and ideal for **append-only,
   physically-ordered** time-series; the correlation requirement (BRIN degrades if
@@ -337,6 +337,8 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-14 | 3 | Two seed rake tasks: `logs:seed[count]` (`Log.create!`, one row at a time) and `logs:seed_bulk[count]` (`Log.insert_all`, batched at 1,000, `record_timestamps: false`) | Needed a slow baseline and a fast path to feel the difference firsthand |
 | 2026-07-14 | 3 | Skipped the raw `COPY` comparison | `insert_all` already demonstrated the core lesson (batching beats row-by-row); `COPY` deemed not worth the extra plumbing right now |
 | 2026-07-14 | 3.5 | Baseline captured with zero indexes on ~1M rows before any index work begins | Need an honest "before" photo — every later phase's index wins get measured against these numbers, not against each other |
+| 2026-07-15 | 4 | `LogGenerator` reworked to advance an internal `@clock` per row (jittered step sized by `span`/`count`) instead of an independent random offset per row | Original random-per-row `timestamp` gave `created_at` ~0 correlation with physical insertion order, which silently defeats BRIN; a real log stream's timestamps naturally correlate with insert order |
+| 2026-07-15 | 4 | Kept BRIN as the `created_at` index (dropped the B-tree, added only for comparison) | On the reseeded, correlated dataset, BRIN cut buffer reads from ~35,850 (full table) to ~5,268 for a ~13% selective range query and ran faster (38.8ms) than every prior plan; B-tree was only tested against the old, uncorrelated dataset so wasn't re-compared head-to-head on the same data |
 
 ---
 
@@ -428,4 +430,32 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   All three real predicates scanned the same ~35,850 buffers total,
   confirming every one read the whole table — the expected state with no
   indexes. These numbers are the "before" baseline every later indexing
-  phase gets compared against. Next: Phase 4 (first indexes) — see roadmap.
+  phase gets compared against.
+- **2026-07-15:** Phase 4 complete. Added a B-tree on `created_at` first: plan
+  went `Seq Scan` → `Bitmap Index Scan` + `Bitmap Heap Scan`, but only a modest
+  win (146ms → 116ms) because the ~23% selective query still touched almost
+  every heap page. Then asked the sharper question before building
+  BRIN: does this data actually satisfy BRIN's correlation requirement?
+  Checked `pg_stats.correlation` on `created_at` — it was ~-0.003 (zero),
+  because `LogGenerator` picked each row's timestamp independently at random
+  from the last week, uncorrelated with insertion order. Built BRIN anyway
+  (dropping the B-tree first) to see the failure mode directly: planner
+  didn't even pick the BRIN index for a plain query (fell back to Seq Scan,
+  same cost as no index); forcing it on via `enable_seqscan = off` showed
+  `Heap Blocks: lossy=35849` (100% of the table, i.e. useless) and a slower
+  183ms than plain Seq Scan — BRIN with broken correlation is worse than no
+  index at all, not merely unhelpful. Fixed the root cause: reworked
+  `LogGenerator` to advance an internal clock per row instead of picking
+  timestamps independently, `TRUNCATE logs RESTART IDENTITY`, reseeded 1M
+  rows, `VACUUM ANALYZE` to refresh stats and BRIN summaries. New
+  correlation: ~0.99999905. Re-ran a ~13%-selective range query: `lossy`
+  dropped to 5,266 blocks, buffers ~5,268 (vs ~35,850 full-table), 38.8ms —
+  faster than every prior plan (Seq Scan, B-tree bitmap, and the broken BRIN
+  run). Noted but didn't chase: this isn't a controlled B-tree-vs-BRIN
+  comparison since the underlying dataset changed between the two tests, so
+  the numbers show "BRIN works when correlation holds," not "BRIN beats
+  B-tree" directly. Also noted a schema_migrations/reality drift: the B-tree
+  index was dropped via raw SQL rather than `db:rollback`, so its migration
+  is still marked as run even though the object it created no longer exists
+  (harmless — `schema.rb` reflects the true current state — but worth using
+  `db:rollback` next time to avoid drift). Next: Phase 5 — see roadmap.

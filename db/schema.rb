@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_14_023025) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_15_002818) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -27,5 +27,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_14_023025) do
     t.jsonb "metadata", default: {}, null: false
     t.enum "status", null: false, enum_type: "log_status"
     t.bigint "user_id", null: false
+    t.index ["created_at"], name: "index_logs_on_created_at", using: :brin
   end
 end
