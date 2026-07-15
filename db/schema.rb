@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_15_010823) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_15_135150) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -25,9 +25,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_15_010823) do
     t.string "level", null: false
     t.text "message", null: false
     t.jsonb "metadata", default: {}, null: false
+    t.virtual "search_vector", type: :tsvector, as: "to_tsvector('english'::regconfig, message)", stored: true
     t.enum "status", null: false, enum_type: "log_status"
     t.bigint "user_id", null: false
     t.index ["created_at"], name: "index_logs_on_created_at", using: :brin
     t.index ["metadata"], name: "index_logs_on_metadata", using: :gin
+    t.index ["search_vector"], name: "index_logs_on_search_vector", using: :gin
   end
 end

@@ -240,7 +240,7 @@ Checkboxes track progress.
   serve; explain-it-back on containment (`@>`) semantics.
 
 ### Phase 6 — Full-Text Search (strategy 3)
-- [ ] Done
+- [x] Done
 - **Postgres focus:** `to_tsvector` / `to_tsquery` / `plainto_tsquery` /
   `websearch_to_tsquery`, tokenization & stemming, `ts_rank`, a **generated
   `tsvector` column** + a **GIN** index on it. Why this beats `ILIKE '%...%'`
@@ -341,6 +341,8 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-15 | 4 | Kept BRIN as the `created_at` index (dropped the B-tree, added only for comparison) | On the reseeded, correlated dataset, BRIN cut buffer reads from ~35,850 (full table) to ~5,268 for a ~13% selective range query and ran faster (38.8ms) than every prior plan; B-tree was only tested against the old, uncorrelated dataset so wasn't re-compared head-to-head on the same data |
 | 2026-07-15 | 5 | GIN index on `metadata` with default `jsonb_ops`; skipped a `jsonb_path_ops` / expression-index size-and-plan comparison | Default `jsonb_ops` supports all the operators (`@>`, `?`, `?&`, `?|`) we might want later, not just containment; deferred the narrower comparison for time, same call as skipping `COPY` in Phase 3 |
 | 2026-07-15 | 5 | Tested containment on `ip` (high cardinality) rather than `browser` (only 7 distinct values in this dataset) | `browser`'s low cardinality (~14% selectivity per value) wouldn't show GIN's real strength the way a highly selective key would — deliberate choice of query, not a data defect like the Phase 4 BRIN correlation bug |
+| 2026-07-15 | 6 | `search_vector` generated column uses `to_tsvector('english', ...)` despite `message` being Lorem Ipsum, not real English | Kept for simplicity; documented the limitation (stop-word removal is a no-op on non-English tokens, though rule-based stemming still fires mechanically) rather than switching to `'simple'` |
+| 2026-07-15 | 6 | Built a minimal HTML log viewer (`LogsController#index`, plain table, no JS framework) alongside the JSON API, plus time-range and `ip` filters reusing the Phase 4 BRIN and Phase 5 GIN indexes | User's stated goal is an eventual searchable/sortable/filterable log viewer; surfacing already-built indexes in the UI now, beyond what Phase 6 strictly required, avoids leaving proven-but-unused index work stranded |
 
 ---
 
@@ -473,4 +475,27 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   `Heap Blocks: exact=1`. Covered GIN's general use cases beyond jsonb
   (full-text `tsvector`, array containment/overlap, `pg_trgm` fuzzy text).
   Deferred the `jsonb_path_ops` / expression-index comparison (see decisions
-  log). Next: Phase 6 — Full-Text Search (`tsvector` + GIN on `message`).
+  log).
+- **2026-07-15:** Phase 6 complete. Added a generated `search_vector tsvector`
+  column (`to_tsvector('english', message)`, `STORED`) + GIN index. Baselined
+  `message ilike '%doloremque%'`: Seq Scan, ~219ms, ~35,858 buffers (same
+  full-table shape as every prior no-index baseline). Confirmed the GIN index
+  does *not* accelerate `ILIKE` at all — reran the identical `ILIKE` query
+  after indexing and got the same ~220ms, since `ILIKE`'s `~~*` operator has
+  no relationship to `tsvector`/GIN. Rewrote as
+  `search_vector @@ to_tsquery('english', 'doloremque')`: 68ms (~3.2x faster,
+  more modest than the jsonb GIN win) — traced the smaller gain to matching
+  rows being scattered across ~38% of heap pages (`Heap Blocks: exact=13698`)
+  despite only ~1.6% of rows matching, unlike the clustered/unique `ip` case
+  in Phase 5. Noticed and corrected an assumption mid-session: the stemmer
+  truncated `"doloremque"` to `"doloremqu"` in the query plan, proving
+  rule-based stemming still fires on non-English/gibberish tokens even though
+  dictionary-based stop-word removal doesn't. Covered `websearch_to_tsquery`
+  (safe for raw user input, unlike `to_tsquery` which errors on malformed
+  syntax) and `ts_rank`. Built `Log.search` (model scope) and
+  `LogsController#index` responding to both HTML and JSON, using
+  `websearch_to_tsquery` + `ts_rank`, verified via curl. Then built a minimal
+  HTML log-viewer page (plain table, no JS framework) and added `in_time_range`
+  and `with_ip` scopes to the same action, exercising the Phase 4 BRIN and
+  Phase 5 GIN indexes from the UI (see decisions log). Next: Phase 7 —
+  Partial indexes.
