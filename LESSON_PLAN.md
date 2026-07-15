@@ -289,7 +289,7 @@ Checkboxes track progress.
   index; explain-it-back on key-columns vs included-columns.
 
 ### Phase 9 — Index maintenance & production ops
-- [ ] Done
+- [x] Done
 - **Postgres focus:** `pg_stat_user_indexes` (find never-used indexes wasting disk
   + slowing writes), `pg_stat_statements` (slowest queries), **`CREATE INDEX
   CONCURRENTLY`** and Rails' `disable_ddl_transaction!` +
@@ -347,6 +347,7 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-15 | 7 | Added an "Errors only" checkbox to the UI, backed by a `server_errors_only` scope matching the partial index's predicate exactly | Any other status value routed through the same param would silently fall back to a Seq Scan — worth exercising the one query shape the index actually serves, rather than adding a generic status dropdown that would mostly miss it |
 | 2026-07-15 | 8 | Composite covering index `(user_id, status)` with `created_at` as an `INCLUDE` column, rather than keying on all three | `user_id`/`status` are what the target query filters on (need B-tree ordering); `created_at` is only read back, not filtered/sorted on, so it rides along cheaper as an included column |
 | 2026-07-15 | 8 | Skipped adding a `user_id` filter to the UI for now | Plan is to eventually build a generic filter-on-any-column UI rather than one-off fields per phase; this index is proven via `EXPLAIN` and will get exercised once that generic UI exists |
+| 2026-07-15 | 9 | Identified `index_logs_on_user_id_status_covering` (39MB, 4 scans) and `index_logs_on_metadata` (82MB, 11 scans) as drop/resize candidates, but deferred acting on either | Covering index backs a UI feature that doesn't exist yet (low urgency to drop); metadata GIN backs the live `ip` filter, so dropping it would silently regress that feature — considered `jsonb_path_ops` as a smaller alternative instead of dropping, but held off changing anything until a dedicated cleanup pass |
 
 ---
 
@@ -538,5 +539,22 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   one right after seeding) can show heap fetches even when every needed
   column is in the index, until autovacuum (or a manual `VACUUM`) catches
   up. Deliberately didn't add a `user_id` filter to the UI yet (see decisions
-  log) — deferred to a future generic filter-by-any-column UI pass. Next:
-  Phase 9 — Index maintenance & production ops.
+  log) — deferred to a future generic filter-by-any-column UI pass.
+- **2026-07-15:** Phase 9 complete. Audited all indexes via
+  `pg_stat_user_indexes`. Noted `idx_tup_fetch = 0` on every index except
+  `logs_pkey` is a stats-attribution quirk, not a real problem — only plain
+  Index Scans count toward `idx_tup_fetch`; the Bitmap Index Scan → Bitmap
+  Heap Scan plans used throughout this project attribute the heap fetch to a
+  different node. `logs_pkey` showed 2,523,017 scans — not from any query
+  we wrote, but from every `INSERT`'s automatic uniqueness check against the
+  primary key. Size comparison made Phase 4's BRIN lesson concrete again:
+  `index_logs_on_created_at` (BRIN) is 32kB vs `index_logs_on_metadata`
+  (GIN) at 82MB, indexing the same table. Flagged two drop/resize candidates
+  but deferred changing anything (see decisions log). Built and ran a
+  `CREATE INDEX CONCURRENTLY` migration (`add_index ..., algorithm:
+  :concurrently` + `disable_ddl_transaction!`) adding an index on `level`
+  (the one previously unindexed column); noted the operational gotcha that
+  a concurrent build can fail partway and leave an `INVALID`, unusable index
+  behind rather than cleanly rolling back, since it can't run inside a
+  transaction. Next: Phase 10+ — optional deepening, or start using the log
+  viewer UI as a real project.
