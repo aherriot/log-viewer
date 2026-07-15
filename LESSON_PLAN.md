@@ -454,8 +454,6 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   run). Noted but didn't chase: this isn't a controlled B-tree-vs-BRIN
   comparison since the underlying dataset changed between the two tests, so
   the numbers show "BRIN works when correlation holds," not "BRIN beats
-  B-tree" directly. Also noted a schema_migrations/reality drift: the B-tree
-  index was dropped via raw SQL rather than `db:rollback`, so its migration
-  is still marked as run even though the object it created no longer exists
-  (harmless — `schema.rb` reflects the true current state — but worth using
-  `db:rollback` next time to avoid drift). Next: Phase 5 — see roadmap.
+  B-tree" directly. The B-tree index was properly removed via `remove_index`
+  inside the BRIN-adding migration itself (not raw SQL), so no
+  schema_migrations/reality drift. Next: Phase 5 — see roadmap.
