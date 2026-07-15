@@ -1,5 +1,6 @@
 class Log < ApplicationRecord
   SORTABLE_COLUMNS = %w[created_at user_id http_status level status].freeze
+  HTTP_STATUSES = [200, 301, 404, 500].freeze
 
   # Full-text search over `message` via the generated `search_vector` column.
   # `websearch_to_tsquery` accepts loose, user-typed search syntax (quoted
@@ -47,6 +48,10 @@ class Log < ApplicationRecord
     false
   end
 
+  def self.valid_integer?(value)
+    /\A-?\d+\z/.match?(value.to_s)
+  end
+
   # Generic status filter. Only status = "server_error" matches
   # index_logs_on_status_server_error's predicate; other values (or no
   # filter) fall back to a Seq Scan, since there's no full index on status.
@@ -69,6 +74,14 @@ class Log < ApplicationRecord
     return all if user_id.blank?
 
     where(user_id: user_id)
+  }
+
+  # No index on http_status — it's low-cardinality (4 distinct values) and
+  # not part of any built index, so this always falls back to a Seq Scan.
+  scope :with_http_status, ->(http_status) {
+    return all if http_status.blank?
+
+    where(http_status: http_status)
   }
 
   # Whitelisted against SORTABLE_COLUMNS to prevent building an arbitrary

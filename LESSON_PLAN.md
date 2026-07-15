@@ -353,6 +353,7 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-15 | UI | Rewrote the `ip` filter to query the real top-level `ip` (inet) column with `<<=` via a new GiST index (`inet_ops`), instead of jsonb containment on `metadata` | jsonb GIN only does exact string matching — no concept of subnet/CIDR containment; the real `inet` column plus GiST is what supports both an exact IP and a subnet range through the same operator |
 | 2026-07-15 | UI | From/To filters are plain dates (`Date.parse`, `to` treated as end-of-day), not datetime-local | Simpler UX; day-level granularity is enough for browsing logs, chosen over a single combined single-day field to keep multi-day ranges possible |
 | 2026-07-15 | UI | Filters embedded directly in table column headers (one form wrapping the whole table) with a Stimulus `auto-submit` controller — no dedicated "Filter" button | Text/number inputs (search, IP, user ID) debounce 400ms before submitting; selects/dates submit immediately on change, since discrete choices don't need debouncing; Turbo (already loaded by default) gives smooth page-morph updates on every auto-submit without extra code |
+| 2026-07-15 | UI | Validate filter params upfront (controller-level regex/parse checks) and show an error banner, rather than letting bad input silently vanish into an empty result (prior IP behavior) or crash (prior non-numeric user_id behavior) | A generic filter-by-any-column UI takes arbitrary text input per field; distinguishing "no results" from "invalid input" matters for usability, and a stray `ActiveRecord::StatementInvalid` shouldn't reach the user as a raw 500 |
 
 ---
 
@@ -587,5 +588,21 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   with a Stimulus `auto-submit` controller — debounced auto-submit on
   text/number fields, immediate submit on selects/dates, no explicit
   "Filter" button, relying on Turbo's already-loaded page-morphing for
-  smooth updates. Next: Phase 10+ — optional deepening, or continue
-  extending the log viewer UI.
+  smooth updates.
+- **2026-07-15:** Added an HTTP status select (200/301/404/500, no
+  supporting index — low-cardinality, always a Seq Scan) to match the other
+  header filters. Added three explicit UI states that were previously
+  missing: (1) an empty state ("No logs match these filters") instead of a
+  blank table body when a filter combination matches nothing; (2) an error
+  state — filters are now validated upfront (invalid date, malformed
+  IP/CIDR, non-numeric User ID/HTTP status) and shown as a red banner
+  listing what's wrong, rather than silently returning zero rows (the prior
+  behavior for a bad IP) or raising an uncaught `ActiveRecord::StatementInvalid`
+  (the prior behavior for a non-numeric user_id against a bigint column);
+  JSON API mirrors this as `422` + an `errors` array; kept a
+  `StatementInvalid` rescue as a defense-in-depth fallback for anything
+  unvalidated; (3) a loading state — the `auto-submit` Stimulus controller
+  now listens for `turbo:submit-start`/`turbo:submit-end` and dims the table
+  while a request is in flight, relevant specifically because debounced
+  typing fires requests you can't otherwise see happening. Next: Phase
+  10+ — optional deepening, or continue extending the log viewer UI.

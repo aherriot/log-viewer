@@ -11,16 +11,32 @@
   th input[type="text"], th input[type="number"], th input[type="date"], th select {
     font-size: 0.85rem; padding: 0.25rem; width: 100%; box-sizing: border-box; font-weight: normal;
   }
-  th input.narrow { width: 6.5rem; }
+  th input.narrow, th select.narrow { width: 6.5rem; }
   .level-error { color: #b00020; font-weight: bold; }
   .level-warn { color: #b06000; }
   .rank { color: #666; font-variant-numeric: tabular-nums; }
   .pagination { margin-top: 1rem; display: flex; gap: 1rem; align-items: center; }
   .pagination a, .pagination span.disabled { padding: 0.3rem 0.7rem; border: 1px solid #ccc; border-radius: 4px; text-decoration: none; color: #222; }
   .pagination span.disabled { color: #aaa; }
+  .banner { padding: 0.6rem 0.9rem; border-radius: 4px; margin-bottom: 1rem; font-size: 0.9rem; }
+  .banner.error { background: #fdecea; color: #b00020; border: 1px solid #f5c2c0; }
+  .banner ul { margin: 0.25rem 0 0 1.2rem; padding: 0; }
+  .empty-state { text-align: center; color: #777; padding: 2rem !important; font-style: italic; }
+  form.loading table { opacity: 0.5; transition: opacity 0.15s ease 0.1s; }
 </style>
 
 <h1>Log Viewer</h1>
+
+<% if @errors.present? %>
+  <div class="banner error">
+    <strong><%= @errors.size == 1 ? "There's a problem with your filters:" : "There are problems with your filters:" %></strong>
+    <ul>
+      <% @errors.each do |error| %>
+        <li><%= error %></li>
+      <% end %>
+    </ul>
+  </div>
+<% end %>
 
 <%= form_with url: logs_path, method: :get, data: { controller: "auto-submit" } do %>
   <table>
@@ -46,7 +62,10 @@
           </div>
         </th>
         <th>
-          <%= sort_link("HTTP", "http_status", @sort, @dir) %>
+          <div class="col-header">
+            <%= sort_link("HTTP", "http_status", @sort, @dir) %>
+            <%= select_tag :http_status, options_for_select([["All", ""]] + Log::HTTP_STATUSES.map(&:to_s), @http_status), class: "narrow", data: { action: "change->auto-submit#submit" } %>
+          </div>
         </th>
         <th>
           <div class="col-header">
@@ -70,17 +89,29 @@
       </tr>
     </thead>
     <tbody>
-      <% @logs.each do |log| %>
+      <% if @logs.empty? %>
         <tr>
-          <td><%= log.created_at.strftime("%Y-%m-%d %H:%M:%S") %></td>
-          <td class="level-<%= log.level %>"><%= log.level %></td>
-          <td><%= log.status %></td>
-          <td><%= log.http_status %></td>
-          <td><%= log.user_id %></td>
-          <td><%= log.ip %></td>
-          <td><%= log.message %></td>
-          <% if @query.present? %><td class="rank"><%= log.rank.round(4) %></td><% end %>
+          <td class="empty-state" colspan="<%= @query.present? ? 8 : 7 %>">
+            <% if @errors.present? %>
+              Fix the filters above to see results.
+            <% else %>
+              No logs match these filters.
+            <% end %>
+          </td>
         </tr>
+      <% else %>
+        <% @logs.each do |log| %>
+          <tr>
+            <td><%= log.created_at.strftime("%Y-%m-%d %H:%M:%S") %></td>
+            <td class="level-<%= log.level %>"><%= log.level %></td>
+            <td><%= log.status %></td>
+            <td><%= log.http_status %></td>
+            <td><%= log.user_id %></td>
+            <td><%= log.ip %></td>
+            <td><%= log.message %></td>
+            <% if @query.present? %><td class="rank"><%= log.rank.round(4) %></td><% end %>
+          </tr>
+        <% end %>
       <% end %>
     </tbody>
   </table>
