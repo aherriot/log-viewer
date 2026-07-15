@@ -52,9 +52,9 @@ class Log < ApplicationRecord
     /\A-?\d+\z/.match?(value.to_s)
   end
 
-  # Generic status filter. Only status = "server_error" matches
-  # index_logs_on_status_server_error's predicate; other values (or no
-  # filter) fall back to a Seq Scan, since there's no full index on status.
+  # Backed by index_logs_on_status (a full index, replacing the earlier
+  # partial index scoped to just "server_error" — the full index serves
+  # every status value plus ORDER BY status, which the partial one couldn't).
   scope :with_status, ->(status) {
     return all if status.blank?
 
@@ -76,8 +76,7 @@ class Log < ApplicationRecord
     where(user_id: user_id)
   }
 
-  # No index on http_status — it's low-cardinality (4 distinct values) and
-  # not part of any built index, so this always falls back to a Seq Scan.
+  # Backed by index_logs_on_http_status.
   scope :with_http_status, ->(http_status) {
     return all if http_status.blank?
 

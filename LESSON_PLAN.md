@@ -604,5 +604,28 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   unvalidated; (3) a loading state — the `auto-submit` Stimulus controller
   now listens for `turbo:submit-start`/`turbo:submit-end` and dims the table
   while a request is in flight, relevant specifically because debounced
-  typing fires requests you can't otherwise see happening. Next: Phase
-  10+ — optional deepening, or continue extending the log viewer UI.
+  typing fires requests you can't otherwise see happening.
+- **2026-07-15:** UX refinements: fixed IP/User ID filters firing
+  (and showing spurious validation errors) on every debounced keystroke by
+  switching them to submit on blur/Enter instead, since partial input is
+  genuinely invalid mid-edit (unlike free-text search); made the loading
+  state more visible with a spinner + text overlay instead of relying on
+  opacity alone; added per-field "×" clear buttons (a generic `clearField`
+  Stimulus action keyed by field name) plus a "Clear all filters" link,
+  always rendering the clear button but toggling `visibility: hidden` so
+  columns don't resize when a filter gets a value.
+- **2026-07-15:** Audited every filter/sort path in the UI against
+  `EXPLAIN`. Found two gaps: sorting by `status` or `http_status` (with no
+  filter) fell back to a full Parallel Seq Scan + Sort (113ms / 188ms),
+  since `status` only had the Phase 7 partial index (scoped to just
+  `server_error`) and `http_status` had no index at all — every other
+  filter/sort combination (search, time range, level, user ID, IP, the
+  default listing) was already well-served. Added full B-tree indexes on
+  both `status` and `http_status`, and **removed the Phase 7 partial index**
+  (`index_logs_on_status_server_error`) since the new full index on `status`
+  serves the same equality filter just as well, plus every other status
+  value, plus `ORDER BY status` — which the partial index, scoped to one
+  value, could never do. Confirmed via `EXPLAIN`: both sorts now
+  sub-millisecond, and the `server_error` filter is still fast on the full
+  index. Next: Phase 10+ — optional deepening, or continue extending the
+  log viewer UI.
