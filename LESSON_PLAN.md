@@ -348,6 +348,11 @@ We append here as we make real choices, so future sessions have the rationale.
 | 2026-07-15 | 8 | Composite covering index `(user_id, status)` with `created_at` as an `INCLUDE` column, rather than keying on all three | `user_id`/`status` are what the target query filters on (need B-tree ordering); `created_at` is only read back, not filtered/sorted on, so it rides along cheaper as an included column |
 | 2026-07-15 | 8 | Skipped adding a `user_id` filter to the UI for now | Plan is to eventually build a generic filter-on-any-column UI rather than one-off fields per phase; this index is proven via `EXPLAIN` and will get exercised once that generic UI exists |
 | 2026-07-15 | 9 | Identified `index_logs_on_user_id_status_covering` (39MB, 4 scans) and `index_logs_on_metadata` (82MB, 11 scans) as drop/resize candidates, but deferred acting on either | Covering index backs a UI feature that doesn't exist yet (low urgency to drop); metadata GIN backs the live `ip` filter, so dropping it would silently regress that feature — considered `jsonb_path_ops` as a smaller alternative instead of dropping, but held off changing anything until a dedicated cleanup pass |
+| 2026-07-15 | UI | Page-based pagination (Prev/Next, 50 rows), not virtualized infinite scroll; "has next page" via fetching one extra row instead of `COUNT(*)` | Infinite scroll needs real client-side virtualization to stay performant, disproportionate JS complexity for a server-rendered app with no framework; avoiding `COUNT(*)` sidesteps a second expensive scan just to render pagination controls |
+| 2026-07-15 | UI | Added a B-tree on `created_at DESC` (`index_logs_on_created_at_btree`), alongside the existing BRIN on the same column | Building the "recent logs, no filters" default view exposed that BRIN can't serve `ORDER BY created_at DESC LIMIT n` efficiently (it only helps range filters, not pre-sorted access) — was a full Parallel Seq Scan + top-N heapsort (146ms, ~47,500 buffers) until this index enabled `Index Scan Backward` (0.14ms, 6 buffers); BRIN kept for its range-filter/size win, B-tree added for this different access pattern on the same column |
+| 2026-07-15 | UI | Rewrote the `ip` filter to query the real top-level `ip` (inet) column with `<<=` via a new GiST index (`inet_ops`), instead of jsonb containment on `metadata` | jsonb GIN only does exact string matching — no concept of subnet/CIDR containment; the real `inet` column plus GiST is what supports both an exact IP and a subnet range through the same operator |
+| 2026-07-15 | UI | From/To filters are plain dates (`Date.parse`, `to` treated as end-of-day), not datetime-local | Simpler UX; day-level granularity is enough for browsing logs, chosen over a single combined single-day field to keep multi-day ranges possible |
+| 2026-07-15 | UI | Filters embedded directly in table column headers (one form wrapping the whole table) with a Stimulus `auto-submit` controller — no dedicated "Filter" button | Text/number inputs (search, IP, user ID) debounce 400ms before submitting; selects/dates submit immediately on change, since discrete choices don't need debouncing; Turbo (already loaded by default) gives smooth page-morph updates on every auto-submit without extra code |
 
 ---
 
@@ -556,5 +561,31 @@ _(Short notes per session: what we finished, what's next, open questions.)_
   (the one previously unindexed column); noted the operational gotcha that
   a concurrent build can fail partway and leave an `INVALID`, unusable index
   behind rather than cleanly rolling back, since it can't run inside a
-  transaction. Next: Phase 10+ — optional deepening, or start using the log
-  viewer UI as a real project.
+  transaction.
+- **2026-07-15:** Built out the generic filter-by-any-column log viewer
+  (core curriculum, Phases 0–9, was already complete at this point). Added
+  page-based pagination and status/level/user_id filters and column-sort
+  links, reusing every index built across Phases 4–9 (see decisions log for
+  the pagination-vs-infinite-scroll call). Discovered and fixed a real bug:
+  `Log.search`'s blank-query branch and the new `sorted_by` method were both
+  calling `.order`, so ActiveRecord accumulated both clauses
+  (`ORDER BY created_at DESC, user_id ASC`) instead of the sort links'
+  chosen column taking effect — fixed by having `search` return `all`
+  unmodified when blank and leaving ordering entirely to `sorted_by`.
+  Investigating the default "recent logs" listing surfaced a genuine gap:
+  BRIN can't serve `ORDER BY created_at DESC LIMIT n` (only range filters),
+  so it was a full Parallel Seq Scan + top-N heapsort; added a B-tree on
+  `created_at DESC` alongside the existing BRIN, confirmed 146ms → 0.14ms.
+  Answered a question about the metadata GIN index: it cannot support
+  subnet/CIDR queries (jsonb containment is exact-string-match only, and
+  GIN has no network-aware opclass anyway) — rewrote the `ip` filter to use
+  the real top-level `inet` column with a new GiST index (`inet_ops`) and
+  the `<<=` operator, which handles an exact IP and a CIDR range through
+  one code path. Simplified from/to to plain dates instead of
+  datetime-local. Reworked the UI again per a follow-up request: filters
+  now live inside table column headers (one form around the whole table)
+  with a Stimulus `auto-submit` controller — debounced auto-submit on
+  text/number fields, immediate submit on selects/dates, no explicit
+  "Filter" button, relying on Turbo's already-loaded page-morphing for
+  smooth updates. Next: Phase 10+ — optional deepening, or continue
+  extending the log viewer UI.

@@ -1,10 +1,12 @@
 class Log < ApplicationRecord
+  SORTABLE_COLUMNS = %w[created_at user_id http_status level status].freeze
+
   # Full-text search over `message` via the generated `search_vector` column.
   # `websearch_to_tsquery` accepts loose, user-typed search syntax (quoted
   # phrases, "or", leading "-" to exclude) without raising on malformed input,
   # unlike `to_tsquery` — the right choice for a search box.
   def self.search(query)
-    return order(created_at: :desc) if query.blank?
+    return all if query.blank?
 
     tsquery_sql = sanitize_sql_array(["websearch_to_tsquery('english', ?)", query])
 
@@ -13,33 +15,67 @@ class Log < ApplicationRecord
       .order("rank DESC")
   end
 
-  # Range filter on created_at, backed by the BRIN index — from/to are
-  # user-typed strings (e.g. from a date input), parsed defensively since
-  # they may be blank or malformed.
+  # Range filter on created_at, backed by the BRIN index. from/to are
+  # plain calendar dates (no time-of-day) from date inputs; `to` is treated
+  # as the end of that day so the range is inclusive of the whole day.
   scope :in_time_range, ->(from, to) {
     scope = all
-    if from.present? && (parsed = Time.zone.parse(from) rescue nil)
-      scope = scope.where("created_at >= ?", parsed)
+    if from.present? && (parsed = Date.parse(from) rescue nil)
+      scope = scope.where("created_at >= ?", parsed.beginning_of_day)
     end
-    if to.present? && (parsed = Time.zone.parse(to) rescue nil)
-      scope = scope.where("created_at <= ?", parsed)
+    if to.present? && (parsed = Date.parse(to) rescue nil)
+      scope = scope.where("created_at <= ?", parsed.end_of_day)
     end
     scope
   }
 
-  # Exact IP match inside the metadata jsonb blob, backed by the GIN index.
+  # Matches a plain IP or a CIDR range against the real `ip` column (not the
+  # jsonb copy), backed by a GiST index using inet_ops. `<<=` means
+  # "contained by or equal to," so it handles an exact IP ('1.2.3.4') and a
+  # subnet ('10.0.0.0/24') through the same operator.
   scope :with_ip, ->(ip) {
     return all if ip.blank?
+    return none unless valid_ip_or_cidr?(ip)
 
-    where("metadata @> ?", { ip: ip }.to_json)
+    where("ip <<= ?::inet", ip)
   }
 
-  # Matches index_logs_on_status_server_error's predicate exactly, so the
-  # planner can actually use that partial index. Any other status value
-  # filtered through here would fall back to a Seq Scan.
-  scope :server_errors_only, ->(flag) {
-    return all unless ActiveModel::Type::Boolean.new.cast(flag)
+  def self.valid_ip_or_cidr?(value)
+    IPAddr.new(value)
+    true
+  rescue IPAddr::Error
+    false
+  end
 
-    where(status: "server_error")
+  # Generic status filter. Only status = "server_error" matches
+  # index_logs_on_status_server_error's predicate; other values (or no
+  # filter) fall back to a Seq Scan, since there's no full index on status.
+  scope :with_status, ->(status) {
+    return all if status.blank?
+
+    where(status: status)
   }
+
+  # Backed by index_logs_on_level, added in Phase 9.
+  scope :with_level, ->(level) {
+    return all if level.blank?
+
+    where(level: level)
+  }
+
+  # user_id alone still uses index_logs_on_user_id_status_covering, since
+  # user_id is that composite index's leading column.
+  scope :with_user_id, ->(user_id) {
+    return all if user_id.blank?
+
+    where(user_id: user_id)
+  }
+
+  # Whitelisted against SORTABLE_COLUMNS to prevent building an arbitrary
+  # column/direction fragment from user-controlled params.
+  def self.sorted_by(column, direction)
+    column = column.presence_in(SORTABLE_COLUMNS) || "created_at"
+    direction = direction == "asc" ? "asc" : "desc"
+    order(Arel.sql("#{column} #{direction}"))
+  end
 end

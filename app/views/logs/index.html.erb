@@ -2,72 +2,100 @@
 
 <style>
   body { font-family: -apple-system, sans-serif; margin: 2rem; color: #222; }
-  form { margin-bottom: 1.5rem; display: flex; gap: 0.75rem; align-items: end; flex-wrap: wrap; }
-  form label { display: flex; flex-direction: column; font-size: 0.8rem; color: #555; gap: 0.25rem; }
-  form label.checkbox { flex-direction: row; align-items: center; gap: 0.4rem; }
-  input[type="text"], input[type="datetime-local"] { font-size: 1rem; padding: 0.4rem; }
-  input[type="text"].q { width: 20rem; }
-  input[type="text"].ip { width: 10rem; }
-  button { font-size: 1rem; padding: 0.4rem 0.8rem; }
   table { border-collapse: collapse; width: 100%; }
-  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; font-size: 0.9rem; vertical-align: top; }
   th { background: #f5f5f5; }
+  th .col-header { display: flex; flex-direction: column; gap: 0.3rem; }
+  th a { color: inherit; text-decoration: none; font-weight: bold; }
+  th a:hover { text-decoration: underline; }
+  th input[type="text"], th input[type="number"], th input[type="date"], th select {
+    font-size: 0.85rem; padding: 0.25rem; width: 100%; box-sizing: border-box; font-weight: normal;
+  }
+  th input.narrow { width: 6.5rem; }
   .level-error { color: #b00020; font-weight: bold; }
   .level-warn { color: #b06000; }
   .rank { color: #666; font-variant-numeric: tabular-nums; }
+  .pagination { margin-top: 1rem; display: flex; gap: 1rem; align-items: center; }
+  .pagination a, .pagination span.disabled { padding: 0.3rem 0.7rem; border: 1px solid #ccc; border-radius: 4px; text-decoration: none; color: #222; }
+  .pagination span.disabled { color: #aaa; }
 </style>
 
 <h1>Log Viewer</h1>
 
-<%= form_with url: logs_path, method: :get do %>
-  <label>
-    Search
-    <%= text_field_tag :q, @query, placeholder: "Search messages…", class: "q" %>
-  </label>
-  <label>
-    From
-    <%= datetime_field_tag :from, @from %>
-  </label>
-  <label>
-    To
-    <%= datetime_field_tag :to, @to %>
-  </label>
-  <label>
-    IP
-    <%= text_field_tag :ip, @ip, placeholder: "1.2.3.4", class: "ip" %>
-  </label>
-  <label class="checkbox">
-    <%= check_box_tag :errors_only, "1", ActiveModel::Type::Boolean.new.cast(@errors_only) %>
-    Errors only
-  </label>
-  <%= button_tag "Filter" %>
+<%= form_with url: logs_path, method: :get, data: { controller: "auto-submit" } do %>
+  <table>
+    <thead>
+      <tr>
+        <th>
+          <div class="col-header">
+            <%= sort_link("Time", "created_at", @sort, @dir) %>
+            <%= date_field_tag :from, @from, data: { action: "change->auto-submit#submit" } %>
+            <%= date_field_tag :to, @to, data: { action: "change->auto-submit#submit" } %>
+          </div>
+        </th>
+        <th>
+          <div class="col-header">
+            <%= sort_link("Level", "level", @sort, @dir) %>
+            <%= select_tag :level, options_for_select([["All", ""]] + %w[debug info warn error], @level), data: { action: "change->auto-submit#submit" } %>
+          </div>
+        </th>
+        <th>
+          <div class="col-header">
+            <%= sort_link("Status", "status", @sort, @dir) %>
+            <%= select_tag :status, options_for_select([["All", ""], ["ok", "ok"], ["client error", "client_error"], ["server error", "server_error"]], @status), data: { action: "change->auto-submit#submit" } %>
+          </div>
+        </th>
+        <th>
+          <%= sort_link("HTTP", "http_status", @sort, @dir) %>
+        </th>
+        <th>
+          <div class="col-header">
+            <%= sort_link("User", "user_id", @sort, @dir) %>
+            <%= number_field_tag :user_id, @user_id, class: "narrow", data: { action: "input->auto-submit#submitDebounced" } %>
+          </div>
+        </th>
+        <th>
+          <div class="col-header">
+            IP
+            <%= text_field_tag :ip, @ip, placeholder: "1.2.3.4 or 10.0.0.0/24", class: "narrow", data: { action: "input->auto-submit#submitDebounced" } %>
+          </div>
+        </th>
+        <th>
+          <div class="col-header">
+            Message
+            <%= text_field_tag :q, @query, placeholder: "Search…", data: { action: "input->auto-submit#submitDebounced" } %>
+          </div>
+        </th>
+        <% if @query.present? %><th>Rank</th><% end %>
+      </tr>
+    </thead>
+    <tbody>
+      <% @logs.each do |log| %>
+        <tr>
+          <td><%= log.created_at.strftime("%Y-%m-%d %H:%M:%S") %></td>
+          <td class="level-<%= log.level %>"><%= log.level %></td>
+          <td><%= log.status %></td>
+          <td><%= log.http_status %></td>
+          <td><%= log.user_id %></td>
+          <td><%= log.ip %></td>
+          <td><%= log.message %></td>
+          <% if @query.present? %><td class="rank"><%= log.rank.round(4) %></td><% end %>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
 <% end %>
 
-<table>
-  <thead>
-    <tr>
-      <th>Time</th>
-      <th>Level</th>
-      <th>Status</th>
-      <th>HTTP</th>
-      <th>User</th>
-      <th>IP</th>
-      <th>Message</th>
-      <% if @query.present? %><th>Rank</th><% end %>
-    </tr>
-  </thead>
-  <tbody>
-    <% @logs.each do |log| %>
-      <tr>
-        <td><%= log.created_at.strftime("%Y-%m-%d %H:%M:%S") %></td>
-        <td class="level-<%= log.level %>"><%= log.level %></td>
-        <td><%= log.status %></td>
-        <td><%= log.http_status %></td>
-        <td><%= log.user_id %></td>
-        <td><%= log.ip %></td>
-        <td><%= log.message %></td>
-        <% if @query.present? %><td class="rank"><%= log.rank.round(4) %></td><% end %>
-      </tr>
-    <% end %>
-  </tbody>
-</table>
+<div class="pagination">
+  <% if @page > 1 %>
+    <%= link_to "← Previous", logs_path(request.query_parameters.merge(page: @page - 1)) %>
+  <% else %>
+    <span class="disabled">← Previous</span>
+  <% end %>
+  <span>Page <%= @page %></span>
+  <% if @has_next %>
+    <%= link_to "Next →", logs_path(request.query_parameters.merge(page: @page + 1)) %>
+  <% else %>
+    <span class="disabled">Next →</span>
+  <% end %>
+</div>
